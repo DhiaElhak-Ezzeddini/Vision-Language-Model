@@ -54,18 +54,18 @@ class SigLIPVisionEmbeddings(nn.Module):
             persistent=False,
         )
         
-        def forward(self,pixel_values:torch.Tensor) -> torch.Tensor : 
-            _,_, height , width = pixel_values.shape ## (batch_size, channels, height, width) 
-            ## (batch_size, channels, height, width) ==> (batch_size, emb_dim, Num_patches_H, Num_patches_W)
-            patch_embeddings = self.patch_embedding(pixel_values)
-            ## (batch_size, emb_dim, Num_patches_H, Num_patches_W) ==> (batch_size, emb_dim, Num_patches) / Num_patches = Num_patches_H * Num_patches_W
-            embeddings = patch_embeddings.flatten(2)
-            ## (batch_size, emb_dim, Num_patches) ==> (batch_size, Num_patches, emb_dim)
-            embeddings = embeddings.transpose(1,2)
-            ## Add positional embedding for each patch
-            embeddings = embeddings + self.Pos_Embedding(self.position_ids)
-            ## (batch_size, Num_patches, emb_dim)
-            return embeddings 
+    def forward(self,pixel_values:torch.Tensor) -> torch.Tensor : 
+        _,_, height , width = pixel_values.shape ## (batch_size, channels, height, width) 
+        ## (batch_size, channels, height, width) ==> (batch_size, emb_dim, Num_patches_H, Num_patches_W)
+        patch_embeddings = self.patch_embedding(pixel_values)
+        ## (batch_size, emb_dim, Num_patches_H, Num_patches_W) ==> (batch_size, emb_dim, Num_patches) / Num_patches = Num_patches_H * Num_patches_W
+        embeddings = patch_embeddings.flatten(2)
+        ## (batch_size, emb_dim, Num_patches) ==> (batch_size, Num_patches, emb_dim)
+        embeddings = embeddings.transpose(1,2)
+        ## Add positional embedding for each patch
+        embeddings = embeddings + self.Pos_Embedding(self.position_ids)
+        ## (batch_size, Num_patches, emb_dim)
+        return embeddings 
 
 class SigLIPMLP(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
@@ -80,6 +80,10 @@ class SigLIPMLP(nn.Module):
         return self.fc2(upper_embeddings)
             
         
+class SigLIPSelfAttention(nn.Module):
+    def __init__(self , config:SigLIPVisionConfig):
+        super().__init__()
+    
         
 class SigLIPVisionEncoder(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
