@@ -66,7 +66,21 @@ class SigLIPVisionEmbeddings(nn.Module):
             embeddings = embeddings + self.Pos_Embedding(self.position_ids)
             ## (batch_size, Num_patches, emb_dim)
             return embeddings 
+
+class SigLIPMLP(nn.Module):
+    def __init__(self , config:SigLIPVisionConfig):
+        super().__init__()
+        self.config = config
+        self.fc1 = nn.Linear(config.hidden_size , config.inter_size)
+        self.fc2 = nn.Linear(config.inter_size , config.hidden_size)
+
+    def forward(self,embeddings) : 
+        upper_embeddings = self.fc1(embeddings)
+        upper_embeddings = nn.functional.gelu(upper_embeddings,approximate="tanh")
+        return self.fc2(upper_embeddings)
             
+        
+        
 class SigLIPVisionEncoder(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
         super().__init__()
