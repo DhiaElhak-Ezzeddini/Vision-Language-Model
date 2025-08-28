@@ -67,6 +67,31 @@ class SigLIPVisionEmbeddings(nn.Module):
             ## (batch_size, Num_patches, emb_dim)
             return embeddings 
             
+class SigLIPVisionEncoder(nn.Module):
+    def __init__(self , config:SigLIPVisionConfig):
+        super().__init__()
+        self.emb_dim = config.hidden_size
+        self.self_attn = SigLIPSelfAttention(config)
+        self.layer_norm1 = nn.LayerNorm(self.emb_dim,eps=config.layer_norm_eps)
+        self.mlp = SigLIPMLP(config)
+        self.layer_norm2 = nn.LayerNorm(self.emb_dim,eps=config.layer_norm_eps)
+        
+    def forward(self,embeddings:torch.Tensor) -> torch.Tensor :
+        ## residual connection (batch_size, Num_patches, emb_dim)
+        residual = embeddings
+        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim)
+        embeddings = self.layer_norm1(embeddings)
+        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim) cc
+        embeddings, _ = self.self_attn(embeddings)
+        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim) 
+        embeddings = embeddings + residual
+        residual = embeddings
+        embeddings = self.layer_norm2(embeddings)
+        embeddings = self.mlp(embeddings)
+        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim) 
+        embeddings = embeddings + residual
+        
+        return embeddings
 
 class SigLIPVisionTransformer(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
