@@ -83,9 +83,48 @@ class SigLIPMLP(nn.Module):
 class SigLIPSelfAttention(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
         super().__init__()
+        self.config = config
+        self.emb_dim = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = self.emb_dim // self.num_heads
+        self.scale = self.head_dim ** -0.5 ## (for the scaled dot product attention)
+        self.dropout = config.attention_dropout
+        
+        self.W_k = nn.Linear(self.emb_dim,self.emb_dim) 
+        self.W_q = nn.Linear(self.emb_dim,self.emb_dim) 
+        self.W_v = nn.Linear(self.emb_dim,self.emb_dim) 
+        self.W_o = nn.Linear(self.emb_dim,self.emb_dim) 
+    
+    def forward(self,embeddings:torch.Tensor) -> Tuple[torch.Tensor,Optional[torch.Tensor]]:
+        ## (batch_size, Num_patches, emb_dim)
+        batch_size, N_patches, _ = embeddings.size()
+        queries = self.W_q(embeddings)
+        keys    = self.W_k(embeddings)
+        values  = self.W_v(embeddings)
+        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_heads, Num_patches, head_dim)
+        queries = queries.view(batch_size,N_patches,self.num_heads,self.head_dim).transpose(1,2)
+        keys    = keys.view(batch_size,N_patches,self.num_heads,self.head_dim).transpose(1,2)
+        values  = values.view(batch_size,N_patches,self.num_heads,self.head_dim).transpose(1,2)
+        ## (batch_size, Num_heads, Num_patches, head_dim) @ (batch_size, Num_heads, head_dim, Num_patches)
+        attn_weights = (torch.matmul(queries,keys.transpose(2,3))*self.scale) 
+        ## attention weights : (batch_size, Num_heads, Num_patches, Num_patches)
+        ## softmax , applied by rows
+        attn_weights = nn.functional.softmax(attn_weights,dim=-1,dtype=torch.float32).to(queries.dtype)
+        attn_weights = nn.functional.dropout(attn_weights,p=self.dropout,training=self.training)
+        ## (batch_size, Num_heads, Num_patches, Num_patches) @ (batch_size, Num_heads, Num_patches, head_dim)
+        ## attention scores : (batch_size, Num_heads, Num_patches, head_dim)
+        attn_scores = torch.matmul(attn_weights,values)
+        ## attention scores : (batch_size, Num_heads, Num_patches, head_dim) ==> (batch_size, Num_patches, Num_heads, head_dim)
+        attn_scores = attn_scores.transpose(1,2).contiguous()  
+        ## (batch_size, Num_patches, Num_heads, head_dim) ==> (batch_size, Num_patches, emb_dim)
+        attn_scores = attn_scores.reshape(batch_size,N_patches,self.emb_dim)
+        ## Mixing the results of each head with the rest of heads that were calculated separately 
+        output = self.W_o(attn_scores)
+        
+        return output , attn_weights 
     
         
-class SigLIPVisionEncoder(nn.Module):
+class SigLIPVisionEncoderLayer(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
         super().__init__()
         self.emb_dim = config.hidden_size
@@ -99,7 +138,7 @@ class SigLIPVisionEncoder(nn.Module):
         residual = embeddings
         ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim)
         embeddings = self.layer_norm1(embeddings)
-        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim) cc
+        ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim) 
         embeddings, _ = self.self_attn(embeddings)
         ## (batch_size, Num_patches, emb_dim) ==> (batch_size, Num_patches, emb_dim) 
         embeddings = embeddings + residual
@@ -110,6 +149,22 @@ class SigLIPVisionEncoder(nn.Module):
         embeddings = embeddings + residual
         
         return embeddings
+    
+    
+    
+class SigLIPVisionEncoder(nn.Module):
+    def __init__(self,config):
+        super().__init__()
+        self.config=config
+        self.layers = nn.ModuleList(
+            [SigLIPVisionEncoderLayer(self.config) for _ in range(config.num_hidden_layers)]
+        )
+    def forward(self,embeddings:torch.Tensor) -> torch.Tensor:
+        for layer in self.layers : 
+            embeddings = layer(embeddings)
+        return embeddings            
+    
+    
 
 class SigLIPVisionTransformer(nn.Module):
     def __init__(self , config:SigLIPVisionConfig):
